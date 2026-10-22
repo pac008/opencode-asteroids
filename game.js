@@ -187,6 +187,8 @@ const BOOST_MULTIPLIER = 2;   // factor de velocidad del turbo
 const BOOST_DURATION   = 8;   // segundos de turbo activo
 const BOOST_COOLDOWN   = 12;  // segundos de recarga antes de volver a usarlo
 const MAX_SPEED        = 700; // px/s, tope de velocidad con el impulso instantaneo
+const TRIPLE_DURATION  = 5;   // segundos de disparo triple
+const TRIPLE_SPREAD    = Math.PI / 18; // 10 grados a cada lado
 
 const SHIELD_DURATION = 8;    // segundos de escudo activo
 const SHIELD_RADIUS   = 22;   // radio del anillo que intercepta impactos
@@ -194,10 +196,10 @@ const SHIELD_COLOR    = '120, 180, 255';
 
 class Ship {
   constructor() {
-    // El turbo NO se reinicia en reset(): asi pasar de nivel no salta la recarga
-    this.boostState = 'off';   // 'off' | 'active' | 'cooling'
-    this.boostTimer = 0;
-    // El escudo tampoco se limpia en reset(): sobrevive al cambio de nivel
+    // Los efectos temporales NO se reinician en reset(): pasar de nivel no los cancela
+    this.boostState  = 'off';   // 'off' | 'active' | 'cooling'
+    this.boostTimer  = 0;
+    this.tripleTimer = 0;
     this.shieldTimer = 0;
     this.shieldFlash = 0;
     this.reset();
@@ -222,6 +224,7 @@ class Ship {
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.shieldTimer   > 0) this.shieldTimer   -= dt;
     if (this.shieldFlash   > 0) this.shieldFlash   -= dt;
+    if (this.tripleTimer   > 0) this.tripleTimer   = Math.max(0, this.tripleTimer - dt);
     this.updateBoost(dt);
 
     const ROT   = 3.5;   // rad/s
@@ -300,12 +303,20 @@ class Ship {
     }
   }
 
+  activateTriple() {
+    this.tripleTimer = TRIPLE_DURATION;
+  }
+
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
     const NOSE = 21;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
+    if (this.tripleTimer > 0) {
+      return [-TRIPLE_SPREAD, 0, TRIPLE_SPREAD]
+        .map(offset => new Bullet(ox, oy, this.angle + offset));
+    }
     return [new Bullet(ox, oy, this.angle)];
   }
 
@@ -400,8 +411,9 @@ class Particle {
   }
 }
 
-// ── Power-ups (velocidad x2 y escudo) ─────────────────────────────────────────
-const CYAN = '0, 229, 255';
+// ── Power-ups (velocidad x2, escudo y disparo triple) ─────────────────────────
+const CYAN  = '0, 229, 255';
+const AMBER = '255, 170, 0';
 const POWERUP_LIFE = 14;   // segundos antes de desaparecer si no se recoge
 
 class PowerUp {
@@ -409,6 +421,7 @@ class PowerUp {
     this.x = x;
     this.y = y;
     this.type = type;
+    this.color = type === 'triple' ? AMBER : type === 'shield' ? SHIELD_COLOR : CYAN;
     const angle = rand(0, Math.PI * 2);
     const speed = rand(20, 45);
     this.vx = Math.cos(angle) * speed;
@@ -429,16 +442,26 @@ class PowerUp {
 
   draw() {
     const r = this.radius * (1 + Math.sin(this.age * 6) * 0.12);
-    const color = this.type === 'boost' ? CYAN : SHIELD_COLOR;
 
-    ctx.fillStyle = `rgba(${color}, 0.12)`;
+    ctx.fillStyle = `rgba(${this.color}, 0.12)`;
     ctx.beginPath();
     ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = `rgb(${color})`;
+    ctx.strokeStyle = `rgb(${this.color})`;
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
+
+    if (this.type === 'triple') {
+      // Tres trayectorias divergentes
+      for (const spread of [-0.5, 0, 0.5]) {
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y + r * 0.55);
+        ctx.lineTo(this.x + spread * r, this.y - r * 0.55);
+        ctx.stroke();
+      }
+      return;
+    }
 
     if (this.type === 'boost') {
       // Chevrones hacia adelante
@@ -552,6 +575,7 @@ let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
 let destroyedAsteroids;
 let starTimer;
+let nextPowerUpType;
 
 const POWERUP_EVERY = 3;   // asteroides destruidos por power-up de turbo
 const SHIELD_EVERY  = 5;   // asteroides destruidos por power-up de escudo
@@ -581,6 +605,7 @@ function initGame() {
   state  = 'playing';
   destroyedAsteroids = 0;
   starTimer = rand(STAR_MIN_INTERVAL, STAR_MAX_INTERVAL);
+  nextPowerUpType = 'boost';
   spawnAsteroids(4);
 }
 
@@ -596,14 +621,22 @@ function explode(x, y, count = 8, color = '255,255,255') {
   for (let i = 0; i < count; i++) particles.push(new Particle(x, y, color));
 }
 
-function spawnPowerUp(x, y, type) {
-  if (type === 'boost') {
-    if (destroyedAsteroids % POWERUP_EVERY !== 0) return;
-    if (ship.boostState !== 'off') return;   // ya hay turbo activo o en recarga
+function spawnPowerUp(x, y) {
+  let type;
+
+  // El escudo tiene prioridad cuando coincide con el turno de turbo/triple
+  if (destroyedAsteroids % SHIELD_EVERY === 0 && !ship.hasShield()) {
+    type = 'shield';
+  } else if (destroyedAsteroids % POWERUP_EVERY === 0) {
+    type = nextPowerUpType;
+    nextPowerUpType = type === 'boost' ? 'triple' : 'boost';
+
+    // El turbo no aparece si ya esta activo o en recarga
+    if (type === 'boost' && ship.boostState !== 'off') return;
   } else {
-    if (destroyedAsteroids % SHIELD_EVERY !== 0) return;
-    if (ship.hasShield()) return;            // ya hay escudo activo
+    return;
   }
+
   powerups.push(new PowerUp(x, y, type));
 }
 
@@ -623,12 +656,11 @@ function spawnShootingStar() {
 
 function collectPowerUp(powerUp) {
   powerUp.dead = true;
-  const color = powerUp.type === 'boost' ? CYAN : SHIELD_COLOR;
-
   if (powerUp.type === 'boost') ship.activateBoost();
-  else ship.activateShield();
+  else if (powerUp.type === 'shield') ship.activateShield();
+  else ship.activateTriple();
 
-  explode(powerUp.x, powerUp.y, 14, color);
+  explode(powerUp.x, powerUp.y, 14, powerUp.color);
 }
 
 function killShip() {
@@ -700,8 +732,7 @@ function update(dt) {
         score += POINTS[a.size];
         explode(a.x, a.y, a.size * 5);
         destroyedAsteroids++;
-        spawnPowerUp(a.x, a.y, 'boost');
-        spawnPowerUp(a.x, a.y, 'shield');
+        spawnPowerUp(a.x, a.y);
         newAsteroids.push(...a.split());
       }
     }
@@ -824,8 +855,13 @@ function drawPowerUpMeters() {
     y += 30;
   }
 
-  if (ship.hasShield())
+  if (ship.hasShield()) {
     drawMeter('ESCUDO', ship.shieldTimer / SHIELD_DURATION, `rgb(${SHIELD_COLOR})`, y);
+    y += 30;
+  }
+
+  if (ship.tripleTimer > 0)
+    drawMeter('TRIPLE', ship.tripleTimer / TRIPLE_DURATION, `rgb(${AMBER})`, y);
 }
 
 function drawHUD() {
