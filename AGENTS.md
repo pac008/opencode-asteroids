@@ -25,14 +25,17 @@ La verificación es **manual**: abrir el juego y jugar (rotar, propulsar, dispar
 ## Gotchas de implementación
 
 - **El tamaño del canvas está duplicado.** `index.html:23` (`width="800" height="600"`) y `game.js:5-6` (`W = 800`, `H = 600`). Cambia el tamaño en **ambos** sitios o el juego se dibuja fuera/deformado.
-- **Estados del juego:** `'playing' | 'dead' | 'gameover'`. `update()` (game.js:293) tiene una rama por estado y hace `return` temprano en `dead`/`gameover`. Cualquier feature nueva debe decidir en qué estado aplica.
-- **Input con dos modelos:** `keys[code]` = tecla mantenida (flechas); `pressed(code)` = flanco de pulsación y **consume el flag** (la segunda llamada en el mismo frame devuelve `false`). `Space` es el único edge-triggered: dispara y reinicia en gameover. `preventDefault()` solo está aplicado a `Space` + flechas (game.js:15) — si añades teclas que scrollean la página, agrégalas a esa lista.
-- **Loop:** `requestAnimationFrame` con `dt` acotado a `0.05` s (game.js:415). Todo movimiento/animación es por `dt`, nunca por frame.
+- **Estados del juego:** `'playing' | 'dead' | 'gameover'`. `update()` (game.js:407) tiene una rama por estado y hace `return` temprano en `dead`/`gameover`. Cualquier feature nueva debe decidir en qué estado aplica.
+- **Input con dos modelos:** `keys[code]` = tecla mantenida (flechas); `pressed(code)` = flanco de pulsación y **consume el flag** (la segunda llamada en el mismo frame devuelve `false`). `Space` es el único edge-triggered: dispara y reinicia en gameover. `preventDefault()` solo está aplicado a `Space` + flechas (game.js:16) — si añades teclas que scrollean la página, agrégalas a esa lista.
+- **Loop:** `requestAnimationFrame` con `dt` acotado a `0.05` s (game.js:568). Todo movimiento/animación es por `dt`, nunca por frame.
+- **El drag es time-based a propósito:** `Math.pow(DRAG, dt * 60)`, no `v *= DRAG`. No reintroduzcas el drag por frame: hace que la velocidad terminal dependa del monitor (a 120 Hz la nave iba a la mitad de velocidad) y con eso el "x2" del turbo no se cumplía igual en todos los equipos.
+- **Estados del turbo:** `Ship.boostState` ∈ `'off' | 'active' | 'cooling'` con `boostTimer`. `Ship.reset()` **no** los toca a propósito (pasar de nivel no puede saltarse la recarga) y solo `initGame()` los limpia. El `boostTimer` se congela mientras la nave está muerta (`Ship.update` hace early return).
 - **Espacio toroidal:** usa siempre el helper `wrap(v, max)` para posiciones.
 - **Tabla de tamaños de asteroide:** `RADII`/`SPEEDS`/`POINTS` en game.js:61-63 están indexadas por tamaño `1..3` (índice `0` es centinela sin usar) e inclinadas para que `POINTS[1]` = 100 (pequeño), `POINTS[3]` = 20 (grande). Añadir un tamaño exige extender las **tres** tablas + `Asteroid.split()` + `spawnAsteroids()`.
+- **Power-up de velocidad:** `PowerUp` (game.js:291) + `spawnPowerUp()` (game.js:382) + `Ship.boostState`. Aparece cada `POWERUP_EVERY` asteroides destruidos; se recoge rozándolo y solo si `boostState === 'off'`. `Particle` acepta un color RGB opcional (`explode(x, y, count, color)`) para los bursts de color.
 - **Textos en pantalla en español** (`NIVEL`, `PUNTAJE`, `GAME OVER`) y **comentarios en español**; identificadores y código en inglés. Mantén esa convención.
 - Dibujo: cada clase pinta directo sobre el `ctx` global con `ctx.save()/restore()` para transformaciones.
 
 ## Docs
 
-El `README.md` menciona **power-ups y "estrella fugaz" que no existen** en `game.js`. Trata el código como fuente de verdad: si implementas esas features, son trabajo nuevo, no un bug de regresión.
+El `README.md` anunciaba una "estrella fugaz" que **nunca existió** en el código; el único power-up real es el de **velocidad x2**. Trata el código como fuente de verdad: si implementas features que el README promete pero el código no tiene, es trabajo nuevo, no una regresión.

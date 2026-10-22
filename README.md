@@ -4,7 +4,7 @@ Clon del clásico arcade **Asteroids** implementado en canvas HTML5 puro, sin de
 
 ## Descripción
 
-Nave espacial en un campo de asteroides con envolvimiento de bordes (el espacio es toroidal). Destruye asteroides para sumar puntos: los grandes se parten en medianos, los medianos en pequeños. Incluye power-ups especiales y tipos de asteroides únicos como la estrella fugaz.
+Nave espacial en un campo de asteroides con envolvimiento de bordes (el espacio es toroidal). Destruye asteroides para sumar puntos: los grandes se parten en medianos, los medianos en pequeños. Incluye power-ups de velocidad: cada 3 asteroides destruidos aparece uno que hace volar la nave al doble de rápido.
 
 ## Tecnologías
 
@@ -38,8 +38,20 @@ Luego visita `http://localhost:3000`.
 | Mediano   | 50     |
 | Pequeño   | 100    |
 
+## Power-ups
+
+| Power-up           | Efecto                                                        |
+| ------------------ | ------------------------------------------------------------- |
+| Velocidad x2 (»)  | Empuje al doble + impulso instantáneo, durante 8 s             |
+
+- Aparece uno por cada **3 asteroides destruidos** (no aparece mientras el turbo está activo o en recarga).
+- Se recoge **volando sobre él**; desaparece solo si pasan 14 s sin recogerlo.
+- Tras usarlo queda **12 s de recarga** (indicador `RECARGA` en el HUD) antes de volver a estar disponible.
+- Durante el turbo la llama del propulsor se vuelve cian.
+
 ## Características
 
 - 3 vidas con invencibilidad temporal al reaparecer (parpadeo)
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
+- Power-up de velocidad x2 con recarga
