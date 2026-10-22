@@ -49,9 +49,21 @@ Luego visita `http://localhost:3000`.
 - Tras usarlo queda **12 s de recarga** (indicador `RECARGA` en el HUD) antes de volver a estar disponible.
 - Durante el turbo la llama del propulsor se vuelve cian.
 
+## Estrellas fugaces
+
+| Elemento      | Comportamiento                                                      |
+| ------------- | ------------------------------------------------------------------- |
+| Estrella fugaz | Entra por un borde al azar, cruza la pantalla y **mata a la nave**   |
+
+- Aparece cada **15-30 s** (intervalo aleatorio), entrando por un borde cualquiera y cruzando en diagonal hacia el lado opuesto.
+- Es mucho más rápida que los asteroides (~800 px/s frente a 32-100 px/s).
+- Su apariencia es una estela luminosa dorada con un núcleo brillante, en lugar del polígono hueco de los asteroides.
+- **Mortal**: si la nave toca la estela pierde una vida. No es toroidal (a diferencia del resto de objetos): desaparece al salir de la pantalla.
+
 ## Características
 
 - 3 vidas con invencibilidad temporal al reaparecer (parpadeo)
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
 - Power-up de velocidad x2 con recarga
+- Estrellas fugaces que cruzan la pantalla de vez en cuando
