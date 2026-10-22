@@ -123,12 +123,15 @@ const BOOST_MULTIPLIER = 2;   // factor de velocidad del turbo
 const BOOST_DURATION   = 8;   // segundos de turbo activo
 const BOOST_COOLDOWN   = 12;  // segundos de recarga antes de volver a usarlo
 const MAX_SPEED        = 700; // px/s, tope de velocidad con el impulso instantaneo
+const TRIPLE_DURATION  = 5;   // segundos de disparo triple
+const TRIPLE_SPREAD    = Math.PI / 18; // 10 grados a cada lado
 
 class Ship {
   constructor() {
-    // El turbo NO se reinicia en reset(): asi pasar de nivel no salta la recarga
-    this.boostState = 'off';   // 'off' | 'active' | 'cooling'
-    this.boostTimer = 0;
+    // Los efectos temporales NO se reinician en reset(): pasar de nivel no los cancela
+    this.boostState  = 'off';   // 'off' | 'active' | 'cooling'
+    this.boostTimer  = 0;
+    this.tripleTimer = 0;
     this.reset();
   }
 
@@ -149,6 +152,7 @@ class Ship {
     if (this.dead) return;
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
+    if (this.tripleTimer   > 0) this.tripleTimer   = Math.max(0, this.tripleTimer - dt);
     this.updateBoost(dt);
 
     const ROT   = 3.5;   // rad/s
@@ -206,12 +210,20 @@ class Ship {
     }
   }
 
+  activateTriple() {
+    this.tripleTimer = TRIPLE_DURATION;
+  }
+
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
     const NOSE = 21;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
+    if (this.tripleTimer > 0) {
+      return [-TRIPLE_SPREAD, 0, TRIPLE_SPREAD]
+        .map(offset => new Bullet(ox, oy, this.angle + offset));
+    }
     return [new Bullet(ox, oy, this.angle)];
   }
 
@@ -284,14 +296,17 @@ class Particle {
   }
 }
 
-// ── Power-up (velocidad x2) ───────────────────────────────────────────────────
-const CYAN = '0, 229, 255';
+// ── Power-ups (velocidad x2 / disparo triple) ─────────────────────────────────
+const CYAN  = '0, 229, 255';
+const AMBER = '255, 170, 0';
 const POWERUP_LIFE = 14;   // segundos antes de desaparecer si no se recoge
 
 class PowerUp {
-  constructor(x, y) {
+  constructor(x, y, type = 'boost') {
     this.x = x;
     this.y = y;
+    this.type = type;
+    this.color = type === 'triple' ? AMBER : CYAN;
     const angle = rand(0, Math.PI * 2);
     const speed = rand(20, 45);
     this.vx = Math.cos(angle) * speed;
@@ -313,15 +328,27 @@ class PowerUp {
   draw() {
     const r = this.radius * (1 + Math.sin(this.age * 6) * 0.12);
 
-    ctx.fillStyle = `rgba(${CYAN}, 0.12)`;
+    ctx.fillStyle = `rgba(${this.color}, 0.12)`;
     ctx.beginPath();
     ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // Chevrones hacia adelante
-    ctx.strokeStyle = `rgb(${CYAN})`;
+    ctx.strokeStyle = `rgb(${this.color})`;
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
+
+    if (this.type === 'triple') {
+      // Tres trayectorias divergentes
+      for (const spread of [-0.5, 0, 0.5]) {
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y + r * 0.55);
+        ctx.lineTo(this.x + spread * r, this.y - r * 0.55);
+        ctx.stroke();
+      }
+      return;
+    }
+
+    // Chevrones hacia adelante (turbo)
     for (const offset of [-5, 5]) {
       ctx.beginPath();
       ctx.moveTo(this.x - r * 0.5, this.y + offset - r * 0.45);
@@ -338,6 +365,7 @@ let score, lives, level;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
 let destroyedAsteroids;
+let nextPowerUpType;
 
 const POWERUP_EVERY = 3;   // asteroides destruidos por power-up generado
 
@@ -364,6 +392,7 @@ function initGame() {
   level  = 1;
   state  = 'playing';
   destroyedAsteroids = 0;
+  nextPowerUpType = 'boost';
   spawnAsteroids(4);
 }
 
@@ -381,14 +410,23 @@ function explode(x, y, count = 8, color = '255,255,255') {
 
 function spawnPowerUp(x, y) {
   if (destroyedAsteroids % POWERUP_EVERY !== 0) return;
-  if (ship.boostState !== 'off') return;   // ya hay turbo activo o en recarga
-  powerups.push(new PowerUp(x, y));
+
+  const type = nextPowerUpType;
+  nextPowerUpType = type === 'boost' ? 'triple' : 'boost';
+
+  // El turbo no aparece si ya esta activo o en recarga
+  if (type === 'boost' && ship.boostState !== 'off') return;
+  powerups.push(new PowerUp(x, y, type));
 }
 
 function collectPowerUp(powerUp) {
   powerUp.dead = true;
-  ship.activateBoost();
-  explode(powerUp.x, powerUp.y, 14, CYAN);
+  if (powerUp.type === 'triple') {
+    ship.activateTriple();
+  } else {
+    ship.activateBoost();
+  }
+  explode(powerUp.x, powerUp.y, 14, powerUp.color);
 }
 
 function killShip() {
@@ -463,13 +501,13 @@ function update(dt) {
     }
   }
 
-  // Nave vs power-up (solo se recoge si el turbo está disponible)
-  if (ship.boostState === 'off') {
-    for (const p of powerups) {
-      if (!p.dead && dist(ship, p) < ship.radius + p.radius) {
-        collectPowerUp(p);
-        break;
-      }
+  // Nave vs power-up (el turbo no se recoge si no está disponible)
+  for (const p of powerups) {
+    if (p.dead) continue;
+    if (p.type === 'boost' && ship.boostState !== 'off') continue;
+    if (dist(ship, p) < ship.radius + p.radius) {
+      collectPowerUp(p);
+      break;
     }
   }
   powerups = powerups.filter(p => !p.dead);
@@ -496,27 +534,37 @@ function drawLifeIcon(x, y) {
   ctx.restore();
 }
 
+function drawMeter(x, y, ratio, color, label) {
+  const width = 110;
+  const height = 5;
+
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = color;
+  ctx.fillText(label, x, y - 4);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.fillRect(x, y, width, height);
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, width * ratio, height);
+}
+
 function drawBoostMeter() {
   if (ship.boostState === 'off') return;
 
   const active = ship.boostState === 'active';
   const total = active ? BOOST_DURATION : BOOST_COOLDOWN;
   const ratio = Math.max(0, Math.min(1, ship.boostTimer / total));
+  const color = active ? `rgb(${CYAN})` : 'rgba(255,255,255,0.45)';
 
-  const x = 14;
-  const y = 42;
-  const width = 110;
-  const height = 5;
+  drawMeter(14, 42, ratio, color, active ? 'TURBO x2' : 'RECARGA');
+}
 
-  ctx.font = '12px monospace';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = active ? `rgb(${CYAN})` : 'rgba(255,255,255,0.45)';
-  ctx.fillText(active ? 'TURBO x2' : 'RECARGA', x, y - 4);
+function drawTripleMeter() {
+  if (ship.tripleTimer <= 0) return;
 
-  ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.fillRect(x, y, width, height);
-  ctx.fillStyle = active ? `rgb(${CYAN})` : 'rgba(255,255,255,0.45)';
-  ctx.fillRect(x, y, width * ratio, height);
+  const ratio = Math.max(0, Math.min(1, ship.tripleTimer / TRIPLE_DURATION));
+  drawMeter(14, 66, ratio, `rgb(${AMBER})`, 'TRIPLE');
 }
 
 function drawHUD() {
@@ -533,6 +581,7 @@ function drawHUD() {
     drawLifeIcon(W - 16 - i * 22, 18);
 
   drawBoostMeter();
+  drawTripleMeter();
 }
 
 function drawOverlay(title, sub) {
