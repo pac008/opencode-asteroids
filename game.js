@@ -135,20 +135,25 @@ const SKIN_TOAST_TIME  = 1.2;   // segundos que se muestra el aviso de skin
 // Poligonos con la nariz en +x; el fuego sale por flameX
 const SHIP_SKINS = [
   {
-    name: 'CLÁSICA', color: '#fff', width: 1.5, flameX: -8,
+    name: 'CLÁSICA', color: '#fff', width: 1.5, flameX: -8, scale: 1, scoreMultiplier: 1,
     points: [[20, 0], [-12, -9], [-7, 0], [-12, 9]],
   },
   {
-    name: 'NEÓN', color: '#00e5ff', width: 1.5, flameX: -7,
+    name: 'NEÓN', color: '#00e5ff', width: 1.5, flameX: -7, scale: 1, scoreMultiplier: 1,
     points: [[22, 0], [0, -7], [-10, -12], [-6, 0], [-10, 12], [0, 7]],
   },
   {
-    name: 'INTERCEPTOR', color: '#ff5c8a', width: 1.6, flameX: -5,
+    name: 'INTERCEPTOR', color: '#ff5c8a', width: 1.6, flameX: -5, scale: 1, scoreMultiplier: 1,
     points: [[18, 0], [4, -8], [-9, -11], [-4, 0], [-9, 11], [4, 8]],
   },
   {
-    name: 'BALLENA', color: '#7dff9b', width: 1.5, flameX: -10,
+    name: 'BALLENA', color: '#7dff9b', width: 1.5, flameX: -10, scale: 1, scoreMultiplier: 1,
     points: [[16, 0], [6, -9], [-8, -10], [-13, 0], [-8, 10], [6, 9]],
+  },
+  {
+    // El doble de grande y con el doble de puntos: más fácil de tocar, más rentable
+    name: 'TITÁN', color: '#ffd23f', width: 1.5, flameX: -8, scale: 2, scoreMultiplier: 2,
+    points: [[20, 0], [8, -10], [-6, -13], [-14, -6], [-14, 6], [-6, 13], [8, 10]],
   },
 ];
 
@@ -180,6 +185,8 @@ function cycleSkin() {
   currentSkin = (currentSkin + 1) % SHIP_SKINS.length;
   skinToast = SKIN_TOAST_TIME;
   saveSkin(currentSkin);
+  // El tamaño de la nave (y su hitbox) cambia al instante, también en partida
+  if (ship) ship.applySkin();
 }
 
 // ── Ship ──────────────────────────────────────────────────────────────────────
@@ -191,8 +198,11 @@ const TRIPLE_DURATION  = 5;   // segundos de disparo triple
 const TRIPLE_SPREAD    = Math.PI / 18; // 10 grados a cada lado
 
 const SHIELD_DURATION = 8;    // segundos de escudo activo
-const SHIELD_RADIUS   = 22;   // radio del anillo que intercepta impactos
+const SHIELD_RADIUS   = 22;   // radio base del anillo que intercepta impactos
 const SHIELD_COLOR    = '120, 180, 255';
+
+const BASE_SHIP_RADIUS = 12;  // hitbox de una nave de escala 1
+const BASE_NOSE        = 21;  // distancia de salida de la bala a escala 1
 
 class Ship {
   constructor() {
@@ -211,11 +221,26 @@ class Ship {
     this.angle  = -Math.PI / 2;
     this.vx     = 0;
     this.vy     = 0;
-    this.radius = 12;
     this.thrusting     = false;
     this.invincible    = 3;
     this.shootCooldown = 0;
     this.dead          = false;
+    this.applySkin();
+  }
+
+  // La skin define tamano, hitbox y multiplicador de puntos
+  applySkin() {
+    const skin = currentSkinDef();
+    this.radius = BASE_SHIP_RADIUS * skin.scale;
+    this.nose   = BASE_NOSE * skin.scale;
+  }
+
+  scoreMultiplier() {
+    return currentSkinDef().scoreMultiplier;
+  }
+
+  shieldRadius() {
+    return SHIELD_RADIUS * currentSkinDef().scale;
   }
 
   update(dt) {
@@ -310,9 +335,8 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = 21;
-    const ox = this.x + Math.cos(this.angle) * NOSE;
-    const oy = this.y + Math.sin(this.angle) * NOSE;
+    const ox = this.x + Math.cos(this.angle) * this.nose;
+    const oy = this.y + Math.sin(this.angle) * this.nose;
     if (this.tripleTimer > 0) {
       return [-TRIPLE_SPREAD, 0, TRIPLE_SPREAD]
         .map(offset => new Bullet(ox, oy, this.angle + offset));
@@ -329,7 +353,7 @@ class Ship {
 
     ctx.save();
     ctx.beginPath();
-    ctx.arc(this.x, this.y, SHIELD_RADIUS * pulse, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, this.shieldRadius() * pulse, 0, Math.PI * 2);
     ctx.strokeStyle = `rgba(${SHIELD_COLOR}, ${flashing ? 1 : alpha})`;
     ctx.lineWidth = flashing ? 3 : 1.5;
     ctx.stroke();
@@ -352,8 +376,9 @@ class Ship {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
+    ctx.scale(skin.scale, skin.scale);
     ctx.strokeStyle = skin.color;
-    ctx.lineWidth   = skin.width;
+    ctx.lineWidth   = skin.width / skin.scale;
     ctx.lineJoin    = 'round';
 
     ctx.beginPath();
@@ -729,7 +754,7 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += POINTS[a.size];
+        score += POINTS[a.size] * ship.scoreMultiplier();
         explode(a.x, a.y, a.size * 5);
         destroyedAsteroids++;
         spawnPowerUp(a.x, a.y);
@@ -751,7 +776,7 @@ function update(dt) {
   } else if (ship.hasShield()) {
     // Con escudo el impacto se detiene en el anillo y solo genera un destello
     for (const a of asteroids) {
-      if (dist(ship, a) < SHIELD_RADIUS + a.radius * 0.82) {
+      if (dist(ship, a) < ship.shieldRadius() + a.radius * 0.82) {
         if (ship.absorbHit()) explode(ship.x, ship.y, 6, SHIELD_COLOR);
         break;
       }
@@ -769,7 +794,7 @@ function update(dt) {
       }
     } else if (ship.hasShield()) {
       for (const s of shootingStars) {
-        if (distToSegment(ship.x, ship.y, s.prevX, s.prevY, s.x, s.y) < SHIELD_RADIUS + STAR_RADIUS) {
+        if (distToSegment(ship.x, ship.y, s.prevX, s.prevY, s.x, s.y) < ship.shieldRadius() + STAR_RADIUS) {
           if (ship.absorbHit()) explode(ship.x, ship.y, 6, SHIELD_COLOR);
           break;
         }
@@ -794,7 +819,8 @@ function update(dt) {
 // ── Draw ──────────────────────────────────────────────────────────────────────
 function drawLifeIcon(x, y) {
   const skin = currentSkinDef();
-  const SCALE = 0.45;
+  // Normaliza el tamano para que el icono del HUD ocupe lo mismo en todas las skins
+  const SCALE = 0.45 / skin.scale;
 
   ctx.save();
   ctx.translate(x, y);
@@ -821,7 +847,8 @@ function drawSkinToast() {
   ctx.textAlign = 'center';
   ctx.font = '14px monospace';
   ctx.fillStyle = skin.color;
-  ctx.fillText(`SKIN: ${skin.name}`, W / 2, H - 22);
+  const bonus = skin.scoreMultiplier > 1 ? ` (x${skin.scoreMultiplier})` : '';
+  ctx.fillText(`SKIN: ${skin.name}${bonus}`, W / 2, H - 22);
   ctx.globalAlpha = 1;
 }
 
@@ -869,7 +896,8 @@ function drawHUD() {
   ctx.font = '15px monospace';
 
   ctx.textAlign = 'left';
-  ctx.fillText(`SCORE  ${score}`, 14, 26);
+  const multiplier = ship.scoreMultiplier();
+  ctx.fillText(`SCORE  ${score}${multiplier > 1 ? `   x${multiplier}` : ''}`, 14, 26);
 
   ctx.textAlign = 'center';
   ctx.fillText(`NIVEL ${level}`, W / 2, 26);

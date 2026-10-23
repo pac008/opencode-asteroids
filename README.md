@@ -29,18 +29,19 @@ Luego visita `http://localhost:3000`.
 | `←` `→`   | Rotar nave           |
 | `↑`       | Propulsar            |
 | `Espacio` | Disparar             |
-| `S`       | Cambiar skin de nave |
+| `S`       | Cambiar nave         |
 
-## Skins
+## Naves / skins
 
-La nave tiene 4 apariencias seleccionables en cualquier momento con `S` (también en la pantalla de GAME OVER):
+La nave tiene 5 variantes seleccionables en cualquier momento con `S` (también en la pantalla de GAME OVER):
 
 - **Clásica** (blanca)
 - **Neón** (cian)
 - **Interceptor** (rosa)
 - **Ballena** (verde)
+- **Titán** (dorada) — el doble de grande y con el doble de puntos
 
-La skin elegida se guarda en `localStorage` y se mantiene entre sesiones. Cambiarla **no** afecta al gameplay: el radio de colisión y la física son idénticos en todas.
+La nave elegida se guarda en `localStorage` y se mantiene entre sesiones. El **Titán** tiene el doble de tamaño (incluido su hitbox y su escudo) y multiplica por 2 los puntos de cada asteroide destruido; el resto comparte la física y el tamaño base.
 
 ## Puntuación
 
@@ -49,6 +50,8 @@ La skin elegida se guarda en `localStorage` y se mantiene entre sesiones. Cambia
 | Grande    | 20     |
 | Mediano   | 50     |
 | Pequeño   | 100    |
+
+Con la nave **Titán** todos los puntos se multiplican por 2.
 
 ## Power-ups
 
@@ -86,4 +89,5 @@ La skin elegida se guarda en `localStorage` y se mantiene entre sesiones. Cambia
 - Power-up de escudo temporal que bloquea impactos
 - Power-up de disparo triple
 - Estrellas fugaces que cruzan la pantalla de vez en cuando
-- 4 skins de nave seleccionables con `S`, con persistencia en `localStorage`
+- 5 naves seleccionables con `S`, con persistencia en `localStorage`
+- Nave Titán: doble de tamaño y doble de puntos
